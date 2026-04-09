@@ -20,8 +20,14 @@
     <!-- 控制面板 -->
     <div class="bg-white shadow-md z-10">
         <div class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-            <h1 class="text-2xl font-bold text-gray-800 mb-4">📄 課程計畫 HTML 檢視與美化工具</h1>
-            
+            <div class="flex items-center justify-between mb-3">
+                <h1 class="text-2xl font-bold text-gray-800">📄 課程計畫 HTML 檢視與美化工具</h1>
+                <button id="toggleSettingsBtn" class="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-md transition-colors">
+                    <span id="toggleArrow" class="inline-block transition-transform duration-200 text-xs">▼</span>
+                    <span id="toggleLabel">收合設定</span>
+                </button>
+            </div>
+            <div id="settingsPanel">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 bg-blue-50 p-5 rounded-lg border border-blue-100">
                 
                 <!-- 步驟 1：連結設定 -->
@@ -74,6 +80,16 @@
 
             </div>
 
+            <!-- 步驟 4：網頁標題 -->
+            <div class="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <label class="block text-sm font-bold text-gray-700 mb-2">
+                    4. 網頁標題（自動讀取，可修改後套用）
+                </label>
+                <input type="text" id="titleInput" placeholder="選擇檔案後自動讀取原始標題..."
+                       class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm text-sm">
+            </div>
+            </div><!-- /settingsPanel -->
+
             <!-- 動作面板 (預設隱藏，處理完成後顯示) -->
             <div id="actionPanel" class="mt-4 hidden flex items-center gap-4 bg-green-50 p-4 rounded-md border border-green-200">
                 <span class="text-green-800 font-medium flex items-center gap-2">
@@ -85,9 +101,24 @@
                     ↗️ 另開視窗全螢幕瀏覽
                 </a>
                 <!-- 下載檔案連結 -->
-                <a id="downloadBtn" href="#" download="美化後課程計畫.html" class="bg-gray-800 hover:bg-gray-900 text-white text-sm font-bold py-2 px-4 rounded shadow transition duration-150">
+                <a id="downloadBtn" href="#" download="調整後的課程計畫首頁.html" class="bg-gray-800 hover:bg-gray-900 text-white text-sm font-bold py-2 px-4 rounded shadow transition duration-150">
                     💾 下載處理後的網頁 (供上傳至伺服器)
                 </a>
+                <!-- 字型大小控制 -->
+                <div class="ml-auto flex flex-col gap-1.5 border-l border-green-300 pl-4">
+                    <div class="flex items-center gap-2">
+                        <span class="text-gray-600 text-xs font-medium w-8 shrink-0">標題：</span>
+                        <button id="headingDecBtn" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 font-bold py-0.5 px-2.5 rounded shadow-sm text-sm">A－</button>
+                        <span id="headingSizeDisplay" class="text-xs font-mono w-12 text-center border border-gray-200 bg-white rounded py-0.5">16px</span>
+                        <button id="headingIncBtn" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 font-bold py-0.5 px-2.5 rounded shadow-sm text-sm">A＋</button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-gray-600 text-xs font-medium w-8 shrink-0">內文：</span>
+                        <button id="bodyDecBtn" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 font-bold py-0.5 px-2.5 rounded shadow-sm text-sm">A－</button>
+                        <span id="bodySizeDisplay" class="text-xs font-mono w-12 text-center border border-gray-200 bg-white rounded py-0.5">14px</span>
+                        <button id="bodyIncBtn" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 font-bold py-0.5 px-2.5 rounded shadow-sm text-sm">A＋</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -152,6 +183,37 @@
 
         // 保存前一個產生的 Blob URL (為了釋放記憶體)
         let previousObjectUrl = null;
+        // 儲存不含字型控制樣式的基底 HTML，供下載時動態注入
+        let baseHtmlForDownload = null;
+
+        // 字型大小控制（10 級可調）
+        const HEADING_SIZES = [12, 13, 14, 15, 16, 18, 20, 22, 24, 28];
+        const BODY_SIZES    = [10, 11, 12, 13, 14, 15, 16, 18, 20, 22];
+        let headingIdx = 4; // 預設第5級 = 16px
+        let bodyIdx    = 4; // 預設第5級 = 14px
+
+        function getFontCtrlCSS() {
+            const h = HEADING_SIZES[headingIdx];
+            const b = BODY_SIZES[bodyIdx];
+            return `
+                    th, tr:first-child td, td.theme-header-cell, h1, h2, h3, h4, h5, h6,
+                    .theme-page-title, .theme-page-title * { font-size: ${h}px !important; }
+                    td:not(.theme-header-cell), p:not(.theme-page-title), li, span:not(.theme-page-title *),
+                    div:not(.theme-page-title) { font-size: ${b}px !important; }
+                `;
+        }
+
+        function updateDownloadBlob() {
+            if (!baseHtmlForDownload) return;
+            if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
+            const htmlWithFont = baseHtmlForDownload.replace('</head>',
+                `<style id="__font-ctrl__">${getFontCtrlCSS()}</style>\n</head>`);
+            const blob = new Blob([htmlWithFont], { type: 'text/html;charset=utf-8' });
+            const objectUrl = URL.createObjectURL(blob);
+            previousObjectUrl = objectUrl;
+            document.getElementById('openTabBtn').href = objectUrl;
+            document.getElementById('downloadBtn').href = objectUrl;
+        }
 
         document.getElementById('renderBtn').addEventListener('click', () => {
             const fileInput = document.getElementById('fileInput');
@@ -314,38 +376,106 @@
                     });
                 }
 
-                // 4. 將修改後的 HTML 轉回字串
+                // 3b. 偵測頁面主標題（含「學年度」或「課程計畫」且短於 80 字的段落/標題元素）
+                const titleCandidates = doc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, div');
+                titleCandidates.forEach(el => {
+                    // 排除表格內的元素
+                    if (el.closest('table')) return;
+                    const txt = el.textContent.trim();
+                    if (txt.length > 0 && txt.length < 80 &&
+                        (txt.includes('學年度') || txt.includes('課程計畫')) &&
+                        (txt.includes('國民小學') || txt.includes('國中') || txt.includes('高中') ||
+                         txt.includes('學校') || txt.includes('總體'))) {
+                        el.classList.add('theme-page-title');
+                    }
+                });
+
+                // 4. 套用自訂標題
+                const customTitle = document.getElementById('titleInput').value.trim();
+                if (customTitle) doc.title = customTitle;
+
+                // 4b. 儲存基底 HTML（不含字型控制樣式），供字型調整後重新產生下載檔
                 const metaCharset = doc.createElement('meta');
                 metaCharset.setAttribute('charset', 'UTF-8');
                 doc.head.insertBefore(metaCharset, doc.head.firstChild);
-                
-                const finalHtmlString = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
-                
+                baseHtmlForDownload = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+
+                // 4c. 注入字型大小樣式至 iframe 預覽用 HTML
+                const fontSizeStyle = doc.createElement('style');
+                fontSizeStyle.id = '__font-ctrl__';
+                fontSizeStyle.innerHTML = getFontCtrlCSS();
+                doc.head.appendChild(fontSizeStyle);
+
                 // 5. 更新 iframe 預覽
+                const finalHtmlString = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
                 iframe.srcdoc = finalHtmlString;
                 placeholder.classList.add('hidden');
                 iframe.classList.remove('hidden');
 
-                // 6. 產生 Blob URL 以供「直接瀏覽」與「下載」
-                if (previousObjectUrl) {
-                    URL.revokeObjectURL(previousObjectUrl);
-                }
-                const blob = new Blob([finalHtmlString], { type: 'text/html;charset=utf-8' });
-                const objectUrl = URL.createObjectURL(blob);
-                previousObjectUrl = objectUrl;
+                // 6. 產生 Blob URL（含目前字型設定），以供「直接瀏覽」與「下載」
+                updateDownloadBlob();
 
-                // 更新按鈕連結並顯示控制面板
-                const openBtn = document.getElementById('openTabBtn');
-                const dlBtn = document.getElementById('downloadBtn');
-                
-                openBtn.href = objectUrl;
-                dlBtn.href = objectUrl;
-                
                 actionPanel.classList.remove('hidden');
             };
 
             // 讀取檔案
             reader.readAsText(file, encoding);
+        });
+
+        // 選擇檔案時自動讀取原始標題
+        document.getElementById('fileInput').addEventListener('change', function() {
+            const file = this.files[0];
+            if (!file) return;
+            const encoding = document.getElementById('encoding').value;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(e.target.result, 'text/html');
+                if (doc.title) {
+                    document.getElementById('titleInput').value = doc.title;
+                }
+            };
+            reader.readAsText(file, encoding);
+        });
+
+        function applyFontSize() {
+            document.getElementById('headingSizeDisplay').textContent = HEADING_SIZES[headingIdx] + 'px';
+            document.getElementById('bodySizeDisplay').textContent = BODY_SIZES[bodyIdx] + 'px';
+            const iframe = document.getElementById('previewFrame');
+            if (iframe.contentDocument && iframe.contentDocument.head) {
+                let styleEl = iframe.contentDocument.getElementById('__font-ctrl__');
+                if (!styleEl) {
+                    styleEl = iframe.contentDocument.createElement('style');
+                    styleEl.id = '__font-ctrl__';
+                    iframe.contentDocument.head.appendChild(styleEl);
+                }
+                styleEl.innerHTML = getFontCtrlCSS();
+            }
+            updateDownloadBlob();
+        }
+
+        document.getElementById('headingDecBtn').addEventListener('click', () => {
+            if (headingIdx > 0) { headingIdx--; applyFontSize(); }
+        });
+        document.getElementById('headingIncBtn').addEventListener('click', () => {
+            if (headingIdx < HEADING_SIZES.length - 1) { headingIdx++; applyFontSize(); }
+        });
+        document.getElementById('bodyDecBtn').addEventListener('click', () => {
+            if (bodyIdx > 0) { bodyIdx--; applyFontSize(); }
+        });
+        document.getElementById('bodyIncBtn').addEventListener('click', () => {
+            if (bodyIdx < BODY_SIZES.length - 1) { bodyIdx++; applyFontSize(); }
+        });
+
+        // 收合／展開設定面板
+        document.getElementById('toggleSettingsBtn').addEventListener('click', () => {
+            const panel = document.getElementById('settingsPanel');
+            const arrow = document.getElementById('toggleArrow');
+            const label = document.getElementById('toggleLabel');
+            const isVisible = !panel.classList.contains('hidden');
+            panel.classList.toggle('hidden', isVisible);
+            arrow.style.transform = isVisible ? 'rotate(-90deg)' : '';
+            label.textContent = isVisible ? '展開設定' : '收合設定';
         });
     </script>
 </body>
